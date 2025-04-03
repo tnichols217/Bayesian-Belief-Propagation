@@ -1,0 +1,11 @@
+result
+out
+stor
+.direnv
+.env
+__pycache__
+release
+temp
+node_modules
+index.js
+index

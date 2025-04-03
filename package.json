@@ -1,0 +1,14 @@
+{
+  "name": "bayesian-belief-propagation",
+  "module": "src/index.ts",
+  "type": "module",
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "simple-statistics": "^7.8.8"
+  }
+}
