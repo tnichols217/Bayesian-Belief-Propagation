@@ -90,13 +90,13 @@ const loopyGraph: FactorGraph<BayesNodeInput> = {
         },
         "C": {
             type: GraphType.VARIABLE,
-            possibleValues: [0, 1],
-            currentBelief: [0.5, 0.5]
+            possibleValues: [0, 1, 2],
+            currentBelief: [0.5, 0.3, 0.2]
         },
         "D": {
             type: GraphType.VARIABLE,
-            possibleValues: [0, 1],
-            currentBelief: [0.5, 0.5]
+            possibleValues: [0, 1, 2],
+            currentBelief: [0.5, 0.3, 0.2]
         },
         "AB": {
             type: GraphType.FACTOR,
@@ -108,11 +108,11 @@ const loopyGraph: FactorGraph<BayesNodeInput> = {
         },
         "CD": {
             type: GraphType.FACTOR,
-            potential: ([c, d]) => c === d ? 0.99 : 0.01
+            potential: ([c, d]) => c === d ? 0.7 : 0.3
         },
         "AD": {
             type: GraphType.FACTOR,
-            potential: ([a, d]) => a === d ? 0.99 : 0.01
+            potential: ([a, d]) => a === d ? 0.7 : 0.3
         }
     },
     edges: [

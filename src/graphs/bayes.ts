@@ -7,7 +7,6 @@ export interface BayesVariableInput extends VariableNode {
 }
 
 export interface BayesVariable extends BayesVariableInput, GraphNodeInternal {
-    logBelief: number[];
     neighbors: BayesFactor[];
 }
 
@@ -16,6 +15,7 @@ export interface BayesFactorInput extends FactorNode {
 }
 
 export interface BayesFactor extends BayesFactorInput, GraphNodeInternal {
+    currentBelief: number[];
     logPotential: (values: number[]) => number;
     neighbors: BayesVariable[];
 }
@@ -29,7 +29,7 @@ export class BeliefPropagation {
     public graph: BayesGraph;
     public messages: number[][][];
     private nextMessages: number[][][];
-    private variableMarginals: number[][];
+    private rawLogVariableMarginals: number[][];
     private dampingFactor: number;
     private evidence = new Map<BayesVariable, number>();
     
@@ -38,7 +38,7 @@ export class BeliefPropagation {
         this.dampingFactor = options.damping || 0;
         this.messages = []
         this.nextMessages = []
-        this.variableMarginals = []
+        this.rawLogVariableMarginals = []
         this.evidence = new Map<BayesVariable, number>()
         this.initializeMessages();
     }
@@ -57,7 +57,7 @@ export class BeliefPropagation {
                     {name: nodeId, id: i, logPotential: (values: number[]) => {
                         const p = node.potential(values);
                         return p > 0 ? Math.log(p) : BeliefUtils.LOG_EPSILON;
-                    }, neighbors: []}
+                    }, neighbors: [], currentBelief: []}
                 ) as BayesFactor]
         ))
 
@@ -82,7 +82,7 @@ export class BeliefPropagation {
                 console.error(`Invalid edge: (${from}, ${to})`)
         })
 
-        return { nodes: nodes.map(([i, o]) => o), edges };
+        return { nodes: nodes.map(([_, o]) => o), edges };
     }
 
     private initializeMessages(): void {
@@ -92,22 +92,21 @@ export class BeliefPropagation {
         this.nextMessages = Array(this.graph.nodes.length).fill([]).map(() => 
             Array(this.graph.nodes.length).fill([])
         );
-        this.variableMarginals = Array(this.graph.nodes.length).fill([]);
+        this.rawLogVariableMarginals = Array(this.graph.nodes.length).fill([]);
 
         for (const node of this.graph.nodes) {
             if (node.type === GraphType.VARIABLE) {
                 const size = node.possibleValues.length;
                 const uniformProb = 1 / size;
-                this.variableMarginals[node.id] = Array(size).fill(uniformProb);
+                this.rawLogVariableMarginals[node.id] = Array(size).fill(Math.log(uniformProb));
                 node.currentBelief = Array(size).fill(uniformProb);
-                node.logBelief = Array(size).fill(Math.log(uniformProb));
             }
         }
 
         for (const [from, to] of this.graph.edges) {
             const toNode = this.graph.nodes[to];
             if (toNode?.type === GraphType.VARIABLE) {
-                this.messages[from][to] = [...this.variableMarginals[to]];
+                this.messages[from][to] = [...this.rawLogVariableMarginals[to]].map(Math.exp);
             } else {
                 this.messages[from][to] = [1];
             }
@@ -120,60 +119,52 @@ export class BeliefPropagation {
             return;
         }
 
-        const marginal = this.variableMarginals[variable.id];
+        const marginal = this.rawLogVariableMarginals[variable.id];
         const factorMessage = this.messages[factor.id][variable.id];
         
         // Divide out the target factor's contribution
-        const logMessage = marginal.map((m, i) => {
+        const message = marginal.map((m, i) => {
             const divisor = factorMessage[i] || BeliefUtils.LOG_EPSILON;
-            return Math.log(m) - Math.log(divisor);
-        });
+            return m - Math.log(divisor);
+        }).map(Math.exp);
     
-        const message = logMessage.map(v => Math.exp(v));
-        this.nextMessages[variable.id][factor.id] = BeliefUtils.normalize(message);
+        this.nextMessages[variable.id][factor.id] = message;
     }
 
     private updateFactorToVariableMessage(factor: BayesFactor, variable: BayesVariable): void {
         const varIndex = factor.neighbors.indexOf(variable);
-    
         const otherVars = factor.neighbors.filter(v => v !== variable);
-        const valIndices = variable.possibleValues.map((_, i) => i);
     
-        // Precompute log terms for other variables [log(b_w) - log(μ_w→f)]
-        const logTerms = otherVars.map(w => {
-            const marginal = this.variableMarginals[w.id]
-            const message = this.messages[w.id][factor.id]
-            return marginal.map((b, i) => Math.log(b) - Math.log(message[i] || BeliefUtils.LOG_EPSILON));
-        });
-    
-        // Compute log messages using LSE
-        const logMessages = valIndices.map(valIndex => {
-            const valueCombinations = otherVars
-                .map(w => w.possibleValues.map((_, i) => i))
-                .reduce((acc, vals) => 
-                    acc.flatMap(combo => vals.map(v => [...combo, v])), 
-                    [[]] as number[][]
-                );
-    
-            return BeliefUtils.logSumExp(
+        // Precompute log(μ_w→f) for all other variables w
+        const logMessagesFromOtherVars = otherVars.map(w => 
+            this.messages[w.id][factor.id].map(m => Math.log(Math.max(m, 1e-20)))
+        );
+
+        const valueCombinations = otherVars
+            .map(w => w.possibleValues.map((_, i) => i))
+            .reduce((acc, vals) => 
+                acc.flatMap(combo => vals.map(v => [...combo, v])), 
+                [[]] as number[][]
+            );
+
+        // Compute log(μ_f→x) using LSE
+        const logMessages = variable.possibleValues.map((_, valIndex) => (
+            BeliefUtils.logSumExp(
                 valueCombinations.map(combo => {
-                    // Build complete assignment
                     const values = new Array(factor.neighbors.length);
                     values[varIndex] = valIndex;
-                    combo.forEach((v, i) => { 
-                        values[factor.neighbors.indexOf(otherVars[i])] = v; 
+                    combo.forEach((v, i) => {
+                        values[factor.neighbors.indexOf(otherVars[i])] = v;
                     });
     
-                    // Sum: logψ + Σ[log(b_w) - log(μ_w→f)]
-                    return factor.logPotential(values) + 
-                        combo.reduce((sum, v, i) => sum + logTerms[i][v], 0);
+                    // Sum: logψ + Σ log(μ_w→f)
+                    return factor.logPotential(values) +
+                        combo.reduce((sum, v, i) => sum + logMessagesFromOtherVars[i][v], 0);
                 })
-            );
-        });
-
-        // Normalize and convert back to probability space
-        const logZ = BeliefUtils.logSumExp(logMessages);
-        this.nextMessages[factor.id][variable.id] = logMessages.map(m => Math.exp(m - logZ));
+            )
+        ));
+    
+        this.nextMessages[factor.id][variable.id] = logMessages.map(Math.exp);
     }
 
 
@@ -203,25 +194,20 @@ export class BeliefPropagation {
 
     private updateBeliefs(): void {
         for (const node of this.graph.nodes) {
-            if (node.type === GraphType.VARIABLE) {
-                // Skip belief updates for observed nodes
-                if (this.evidence.has(node)) continue;
+            // Skip belief updates for observed nodes
+            if (node.type == GraphType.VARIABLE && this.evidence.has(node)) continue;
 
-                const newMarginal = node.possibleValues.map((_, i) => (
-                    Math.exp(node.neighbors
-                        .map(neighbor => Math.log(this.messages[neighbor.id][node.id][i] || 1))
-                        .reduce((a, b) => a + b, 0)
-                    )
-                ));
+            this.rawLogVariableMarginals[node.id] = node.currentBelief.map((_, i) => (
+                node.neighbors
+                    .map(neighbor => Math.log(this.messages[neighbor.id][node.id][i] || 1))
+                    .reduce((a, b) => a + b, 0)
+            ));
 
-                node.currentBelief = BeliefUtils.dampMessage(
-                    BeliefUtils.normalize(newMarginal), 
-                    node.currentBelief, 
-                    this.dampingFactor
-                );
-                node.logBelief = node.currentBelief.map(Math.log);
-                this.variableMarginals[node.id] = node.currentBelief.slice();
-            }
+            node.currentBelief = BeliefUtils.normalize(BeliefUtils.dampMessage(
+                this.rawLogVariableMarginals[node.id].map(Math.exp),
+                node.currentBelief,
+                this.dampingFactor
+            ));
         }
     }
     
@@ -263,8 +249,7 @@ export class BeliefPropagation {
 
         // Force beliefs to observed value
         node.currentBelief = node.possibleValues.map(v => v === value ? 1 : 0);
-        node.logBelief = node.currentBelief.map(v => v === 1 ? 0 : -Infinity);
-        this.variableMarginals[node.id] = [...node.currentBelief];
+        this.rawLogVariableMarginals[node.id] = [...node.currentBelief].map(Math.log);
 
         // Initialize messages to reflect evidence
         for (const factor of node.neighbors) {
@@ -284,18 +269,5 @@ export class BeliefPropagation {
             throw new Error(`Cannot get beliefs from non-variable node: ${nodeId}`);
         }
         return [...node.currentBelief];
-    }
-
-    /**
-     * Gets the current belief distribution for a node
-     * @param nodeId - Name of the node
-     * @returns Probability distribution over possible values
-     */
-    public getLogBeliefs(nodeId: string): number[] {
-        const node = this.graph.nodes.find(n => n.name === nodeId);
-        if (!node || node.type !== GraphType.VARIABLE) {
-            throw new Error(`Cannot get beliefs from non-variable node: ${nodeId}`);
-        }
-        return [...node.logBelief];
     }
 }
