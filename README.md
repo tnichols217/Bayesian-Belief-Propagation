@@ -1,15 +1,15 @@
-# bayesian-belief-propagation
+# Bayesian-belief-propagation
 
-To install dependencies:
+This library serves as an easy to use method to perform Loopy Belief Propagation on both discrete and continuous variables.
 
-```bash
-bun install
-```
+## Examples
 
-To run:
+Examples may be found in the `src/index.ts` file.
 
-```bash
-bun run src/index.ts
-```
+## Upcoming
 
-This project was created using `bun init` in bun v1.2.5. [Bun](https://bun.sh) is a fast all-in-one JavaScript runtime.
+- Loopy Gaussian Belief Propagation will be pushed to this repository soon
+- A better README
+- Better examples
+- Packaging for npmjs and nix
+- An example website utilizing this library
