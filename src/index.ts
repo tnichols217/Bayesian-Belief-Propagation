@@ -1,5 +1,6 @@
 import { BeliefPropagation, type BayesNodeInput } from "./graphs/bayes";
 import { GraphType, type FactorGraph } from "./graphs/util";
+import { GaussianBeliefPropagation, type GaussianNodeInput } from './graphs/gaussian';
 
 const nodes = {
     // Disease node (hidden cause)
@@ -134,3 +135,37 @@ console.log("Node A:", bp2.getBeliefs("A"));
 console.log("Node B:", bp2.getBeliefs("B"));
 console.log("Node C:", bp2.getBeliefs("C"));
 console.log("Node D:", bp2.getBeliefs("D"));
+
+
+// Create the graph structure
+const graph: FactorGraph<GaussianNodeInput> = {
+    nodes: {
+        "A": { type: GraphType.VARIABLE, mean: 2, variance: 1 },
+        "B": { type: GraphType.VARIABLE, mean: 0, variance: 1 },
+        "F": {
+            type: GraphType.FACTOR,
+            potentialMean: [0, 0],
+            potentialPrecision: [
+                [1, -1],
+                [-1, 1],
+            ],
+        },
+    },
+    edges: [
+        ['A', 'F'],
+        ['B', 'F'],
+    ],
+};
+
+// Create the inference engine
+const gbp = new GaussianBeliefPropagation(graph);
+
+// Optionally clamp variable A (evidence)
+gbp.setEvidence('A', 2, 1e-6); // A is strongly observed at mean 2
+
+// Run message passing
+gbp.runIterations(10);
+
+// Output final beliefs
+console.log('Belief for A:', gbp.getBeliefs('A'));
+console.log('Belief for B:', gbp.getBeliefs('B'));
