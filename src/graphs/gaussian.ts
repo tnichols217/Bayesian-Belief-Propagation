@@ -1,5 +1,5 @@
 import { GraphType } from './util';
-import { matrix, multiply, inv, subtract, add, index, range, diag, divide, dot, transpose } from 'mathjs';
+import { matrix, multiply } from 'mathjs';
 import type { FactorGraph, VariableNode, FactorNode, InternalFactorGraph, NodeID, GraphNodeInternal } from './util';
 
 export interface GaussianVariableInput extends VariableNode {
@@ -15,7 +15,7 @@ export interface GaussianVariable extends GaussianVariableInput, GraphNodeIntern
 
 export interface GaussianFactorInput extends FactorNode {
     potentialMean: number[];
-    potentialPrecision: number[][]; // Precision matrix (inverse covariance)
+    potentialPrecision: number[][];
 }
 
 export interface GaussianFactor extends GaussianFactorInput, GraphNodeInternal {
@@ -121,15 +121,15 @@ export class GaussianBeliefPropagation {
             return;
         }
 
-        let totalPrecision = 0;
-        let weightedMean = 0;
+        let otherNeighbors = variable.neighbors.filter(n => n.id != factor.id)
 
-        for (const neighbor of variable.neighbors) {
-            if (neighbor.id === factor.id) continue;
-            const precision = this.messages.precision[neighbor.id][variable.id];
-            totalPrecision += precision;
-            weightedMean += precision * this.messages.mean[neighbor.id][variable.id];
-        }
+        let totalPrecision = otherNeighbors
+            .map(n => this.messages.precision[n.id][variable.id])
+            .reduce((p, c) => p + c);
+
+        let weightedMean = otherNeighbors
+            .map(n => this.messages.precision[n.id][variable.id] * this.messages.mean[n.id][variable.id])
+            .reduce((p, c) => p + c);
 
         this.nextMessages.precision[variable.id][factor.id] = totalPrecision;
         this.nextMessages.mean[variable.id][factor.id] = totalPrecision > 0 ? weightedMean / totalPrecision : 0;
@@ -145,9 +145,8 @@ export class GaussianBeliefPropagation {
 
         for (let j = 0; j < n; j++) {
             if (j === idx) continue;
-            const neighbor = factor.neighbors[j];
-            const mij = this.messages.mean[neighbor.id][factor.id];
-            precSum += Lambda.get([idx, j]) * mij;
+            precSum += Lambda.get([idx, j])
+                * this.messages.mean[factor.neighbors[j].id][factor.id];
         }
 
         const precision = Lambda.get([idx, idx]);

@@ -135,7 +135,7 @@ export class BeliefPropagation {
         const varIndex = factor.neighbors.indexOf(variable);
         const otherVars = factor.neighbors.filter(v => v !== variable);
     
-        // Precompute log(μ_w→f) for all other variables w
+        // Precompute log(mu_w→f) for all other variables w
         const logMessagesFromOtherVars = otherVars.map(w => 
             this.messages[w.id][factor.id].map(m => Math.log(Math.max(m, 1e-20)))
         );
@@ -147,7 +147,6 @@ export class BeliefPropagation {
                 [[]] as number[][]
             );
 
-        // Compute log(μ_f→x) using LSE
         const logMessages = variable.possibleValues.map((_, valIndex) => (
             BeliefUtils.logSumExp(
                 valueCombinations.map(combo => {
@@ -157,7 +156,6 @@ export class BeliefPropagation {
                         values[factor.neighbors.indexOf(otherVars[i])] = v;
                     });
     
-                    // Sum: logψ + Σ log(μ_w→f)
                     return factor.logPotential(values) +
                         combo.reduce((sum, v, i) => sum + logMessagesFromOtherVars[i][v], 0);
                 })

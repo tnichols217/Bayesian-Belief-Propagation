@@ -9,7 +9,6 @@ const nodes = {
         possibleValues: [0, 1, 2], // 0=Healthy, 1=Cold, 2=Flu
         currentBelief: [0.8, 0.1, 0.1] // Prior: 80% healthy
     } as BayesNodeInput,
-    
     // Symptom nodes (observations)
     "fever": {
         type: GraphType.VARIABLE,
@@ -28,7 +27,7 @@ const nodes = {
         potential: ([d, f]) => {
             // P(fever|disease)
             const probs = [
-                [0.99, 0.01], // Healthy
+                [0.99, 0.01],  // Healthy
                 [0.7, 0.3],    // Cold
                 [0.1, 0.9]     // Flu
             ];
@@ -40,7 +39,7 @@ const nodes = {
         potential: ([d, c]) => {
             // P(cough|disease)
             const probs = [
-                [0.9, 0.1],   // Healthy
+                [0.9, 0.1],    // Healthy
                 [0.2, 0.8],    // Cold
                 [0.3, 0.7]     // Flu
             ];
@@ -140,9 +139,26 @@ console.log("Node D:", bp2.getBeliefs("D"));
 // Create the graph structure
 const graph: FactorGraph<GaussianNodeInput> = {
     nodes: {
-        "A": { type: GraphType.VARIABLE, mean: 2, variance: 1 },
-        "B": { type: GraphType.VARIABLE, mean: 0, variance: 1 },
-        "F": {
+        A: { type: GraphType.VARIABLE, mean: 2, variance: 1 },
+        B: { type: GraphType.VARIABLE, mean: 0, variance: 1 },
+        C: { type: GraphType.VARIABLE, mean: -2, variance: 1 },
+        F: {
+            type: GraphType.FACTOR,
+            potentialMean: [0, 0],
+            potentialPrecision: [
+                [1, -1],
+                [-1, 1],
+            ],
+        },
+        G: {
+            type: GraphType.FACTOR,
+            potentialMean: [0, 0],
+            potentialPrecision: [
+                [1, -1],
+                [-1, 1],
+            ],
+        },
+        H: {
             type: GraphType.FACTOR,
             potentialMean: [0, 0],
             potentialPrecision: [
@@ -152,8 +168,9 @@ const graph: FactorGraph<GaussianNodeInput> = {
         },
     },
     edges: [
-        ['A', 'F'],
-        ['B', 'F'],
+        ['A', 'F'], ['B', 'F'],
+        ['B', 'G'], ['C', 'G'],
+        ['A', 'H'], ['C', 'H'],
     ],
 };
 
@@ -169,3 +186,4 @@ gbp.runIterations(10);
 // Output final beliefs
 console.log('Belief for A:', gbp.getBeliefs('A'));
 console.log('Belief for B:', gbp.getBeliefs('B'));
+console.log('Belief for C:', gbp.getBeliefs('C'));
